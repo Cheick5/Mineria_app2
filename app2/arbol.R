@@ -1,27 +1,31 @@
-
 # cargamos librerias
-pacman::p_load(tidyverse, tidymodels, discrim, naivebayes, anytime)
+pacman::p_load(tidyverse, tidymodels, discrim, naivebayes, nycflights13)
 set.seed(42)
+
 
 Datos_Train = read.csv("ALUMNOS-trainData.csv", header = TRUE, sep = ",") %>% sample_n(1000) #Este csv tiene la columna noshow
 Datos_Test = read.csv("ALUMNOS-evalData.csv", header = TRUE, sep = ",") %>% sample_n(1000)
 
 
 
-#Seleccionamos todas las variables, el por qué está en el informe.
+# data de vuelos a NYC
 data <- 
   Datos_Train %>% 
   mutate(
-    noshow = ifelse(noshow >= 4,1,0), #si un vuelo de Santiago a Concepción tiene 3 no show entonces el vuelo se cataloga como 0. Caso contrario, si 4 o más personas no se presentaron, entonces el vuelo se cataloga como 1
+    noshow = ifelse(noshow >= 4,1,0),
+    noshow = factor(noshow),
     date = lubridate::as_date(date)
   ) %>% 
+  dplyr::select(everything()) %>% 
   na.omit() %>% 
   mutate_if(is.character, as.factor)  %>% 
-  sample_n(1000)
+  sample_n(500)
 
+(data$date)
 
+# receta
 receta <- 
-  recipe(noshow ~ .,data = data) %>% 
+  recipe(noshow ~ ., data = data) %>% 
   update_role(fligth_number, id, new_role = "ID") %>% 
   step_date(date, features = c("dow", "month")) %>%               
   step_holiday(date, 
@@ -30,6 +34,11 @@ receta <-
   step_dummy(all_nominal_predictors()) %>% 
   step_zv(all_predictors())
 
+
+# division datos
+data_split <- initial_split(data, prop = 3/4)
+train_data <- training(data_split)
+test_data  <- testing(data_split)
 
 # definimos modelo de arbol con 5 niveles de profundidad y min 10 nodos por hoja
 modelo <-
@@ -46,16 +55,15 @@ fitea <- function(mod){
     workflow() %>% 
     add_model(mod) %>% 
     add_recipe(receta) %>% 
-    fit(data = Datos_Train)
+    fit(data = train_data)
   
   model_pred <- 
     predict(modelo_fit, test_data, type = "prob") %>% 
     bind_cols(test_data) 
   
   return(model_pred %>% 
-           roc_auc(truth = arr_delay, .pred_late))
+           roc_auc(truth = noshow, .pred_1))
 }
 
 # usamos funcion fitea con modelo de arboles
 fitea(modelo)
-
